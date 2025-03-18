@@ -2,19 +2,49 @@ import asyncio
 import random
 import aiohttp
 import os
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, FSInputFile
 from gtts import gTTS
 from googletrans import Translator
 from config import TOKEN, WEATHER_API_KEY
+import keyboards as kb
 
-translator = Translator(timeout=10)
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 os.makedirs("tmp", exist_ok=True)
 os.makedirs("img", exist_ok=True)
+
+translator = Translator()
+
+@dp.message(F.text == "Привет")
+async def hello_handler(message: Message):
+    await message.answer(f"Привет, {message.from_user.first_name}! ✨")
+
+@dp.message(F.text == "Пока")
+async def bye_handler(message: Message):
+    await message.answer(f"До свидания, {message.from_user.first_name}! 👋")
+
+@dp.message(Command("links"))
+async def links_command(message: Message):
+    await message.answer("Ссылки на ресурсы:", reply_markup=kb.links)
+
+@dp.message(Command("dynamic"))
+async def dynamic_command(message: Message):
+    await message.answer("Динамическое меню:", reply_markup=kb.dynamic_keyboard())
+
+@dp.callback_query(F.data == "show_more")
+async def show_more_handler(callback: types.CallbackQuery):
+    await callback.message.edit_reply_markup(reply_markup=kb.dynamic_keyboard(show_more=True))
+    await callback.answer()
+
+@dp.callback_query(F.data.startswith("option_"))
+async def option_handler(callback: types.CallbackQuery):
+    option = callback.data.split("_")[1]
+    await callback.message.answer(f"Выбрана опция {option} ✅")
+    await callback.answer()
 
 @dp.message(Command('video'))
 async def video(message: Message):
@@ -31,7 +61,7 @@ async def video(message: Message):
 async def voice(message: Message):
     try:
         voice_file = FSInputFile("sample.ogg")
-        await message.answer_voice(voice_file)
+        await bot.send_voice(message.chat.id, voice_file)
     except FileNotFoundError:
         await message.answer("Голосовой файл не найден.")
     except Exception as e:
@@ -50,9 +80,9 @@ async def audio(message: Message):
 @dp.message(Command('training'))
 async def training(message: Message):
     training_list = [
-        "Тренировка 1:\n1. Скручивания: 3 подхода по 15 повторений\n2. Велосипед: 3 подхода по 20 повторений (каждая сторона)\n3. Планка: 3 подхода по 30 секунд",
-        "Тренировка 2:\n1. Подъемы ног: 3 подхода по 15 повторений\n2. Русский твист: 3 подхода по 20 повторений (каждая сторона)\n3. Планка с поднятой ногой: 3 подхода по 20 секунд (каждая нога)",
-        "Тренировка 3:\n1. Скручивания с поднятыми ногами: 3 подхода по 15 повторений\n2. Горизонтальные ножницы: 3 подхода по 20 повторений\n3. Боковая планка: 3 подхода по 20 секунд (каждая сторона)"
+        "Тренировка 1:\n1. Скручивания: 3x15\n2. Велосипед: 3x20\n3. Планка: 3x30 сек",
+        "Тренировка 2:\n1. Подъемы ног: 3x15\n2. Русский твист: 3x20\n3. Планка с ногой: 3x20 сек",
+        "Тренировка 3:\n1. Скручивания с ногами: 3x15\n2. Ножницы: 3x20\n3. Боковая планка: 3x20 сек"
     ]
 
     rand_tr = random.choice(training_list)
@@ -62,7 +92,6 @@ async def training(message: Message):
         tts = gTTS(text=rand_tr, lang='ru')
         filename = "tmp/training.ogg"
         tts.save(filename)
-        await bot.send_chat_action(message.chat.id, 'upload_voice')
         await bot.send_voice(chat_id=message.chat.id, voice=FSInputFile(filename))
         os.remove(filename)
     except Exception as e:
@@ -81,12 +110,14 @@ async def help_command(message: Message):
         "/doc - Получить документ\n"
         "/video - Получить видео\n"
         "/audio - Получить аудиофайл\n"
+        "/links - Полезные ссылки\n"
+        "/dynamic - Динамическое меню\n"
     )
     await message.answer(help_text)
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    await message.answer(f'Приветики, {message.from_user.first_name}! ✨')
+    await message.answer(f'Привет, {message.from_user.first_name}! ✨', reply_markup=kb.main)
 
 async def main():
     await dp.start_polling(bot)
@@ -123,10 +154,10 @@ async def get_weather(city: str) -> str:
 
             return (
                 f"🌤 Погода в {city}:\n"
-                f"➖ Состояние: {weather}\n"
-                f"🌡 Температура: {temp}°C\n"
-                f"💧 Влажность: {humidity}%\n"
-                f"🌪 Ветер: {wind} м/с"
+                f"➖ {weather}\n"
+                f"🌡 {temp}°C\n"
+                f"💧 {humidity}%\n"
+                f"🌪 {wind} м/с"
             )
 
 @dp.message(Command("weather"))
@@ -147,15 +178,7 @@ async def photo(message: Message):
         'https://img.freepik.com/free-photo/nature-animals_1122-1999.jpg',
         'https://img.freepik.com/free-photo/cute-cat-spending-time-indoors_23-2150649172.jpg'
     ]
-    rand_photo = random.choice(image_links)
-    await message.answer_photo(photo=rand_photo, caption='Это супер крутая картинка')
-
-@dp.message(F.photo)
-async def react_photo(message: Message):
-    responses = ['Ого, какая фотка!', 'Непонятно, что это такое', 'Не отправляй мне такое больше']
-    rand_answ = random.choice(responses)
-    await message.answer(rand_answ)
-    await message.photo[-1].download(destination=f'img/{message.photo[-1].file_id}.jpg')
+    await message.answer_photo(photo=random.choice(image_links), caption='Вот ваша картинка!')
 
 @dp.message(F.text)
 async def translate_text(message: Message):
@@ -165,11 +188,7 @@ async def translate_text(message: Message):
     except Exception as e:
         await message.answer(f"Ошибка при переводе текста: {str(e)}")
 
-@dp.message(F.text == "что такое ИИ?")
-async def aitext(message: Message):
-    await message.answer(
-        'Искусственный интеллект — это свойство искусственных интеллектуальных систем выполнять творческие функции, которые традиционно считаются прерогативой человека; наука и технология создания интеллектуальных машин, особенно интеллектуальных компьютерных программ.'
-    )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
